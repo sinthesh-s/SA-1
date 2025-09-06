@@ -40,7 +40,7 @@ def set_background(image_path):
     """
     st.markdown(css, unsafe_allow_html=True)
 
-set_background("background_image(1).jpg")  # <-- Add this file later
+set_background("background_image (1).jpg")  # <-- Add this file later
 
 # --- Extract & Load Model ---
 model_zip_path = "best_sentiment_model.zip"
