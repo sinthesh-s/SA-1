@@ -1,143 +1,143 @@
 import streamlit as st
-import joblib
-import base64
-import os
-import zipfile
+import joblib, re, html
 from textblob import TextBlob
 
-# ---------------------------
-# Page Config
-# ---------------------------
-st.set_page_config(page_title="🎬 Movie Review Sentiment Analyzer", layout="centered")
-
-# ---------------------------
-# Background Setup
-# ---------------------------
-def set_background(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            encoded = base64.b64encode(img_file.read()).decode()
-        css = f"""
-        <style>
-        .stApp {{
-            background-image: url("data:image/jpg;base64,{encoded}");
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            backdrop-filter: blur(2px);
-        }}
-        .title-text {{
-            background-color: rgba(0,0,0,0.6);
-            color: white;
-            padding: 1rem;
-            border-radius: 10px;
-            text-align: center;
-            font-size: 1.8rem;
-            font-weight: bold;
-        }}
-        .result {{
-            background-color: rgba(255,255,255,0.85);
-            padding: 0.8rem;
-            margin-top: 1rem;
-            border-radius: 8px;
-            font-size: 1.2rem;
-        }}
-        </style>
-        """
-        st.markdown(css, unsafe_allow_html=True)
-    except:
-        st.warning("⚠ Background image not found.")
-
-set_background("background_image (1).jpg")
-
-# ---------------------------
-# Load Model Artifacts
-# ---------------------------
+# -------------------------
+# Load artifacts
+# -------------------------
 @st.cache_resource
 def load_artifacts():
-    model = None
-    vectorizer = None
-    label_encoder = None
-
-    # Extract the model zip if not already done
-    if os.path.exists("best_sentiment_model.zip"):
-        with zipfile.ZipFile("best_sentiment_model.zip", "r") as zip_ref:
-            zip_ref.extractall("artifacts")
-
-    try:
-        model = joblib.load("artifacts/best_sentiment_model.pkl")
-        vectorizer = joblib.load("tfidf_vectorizer (1).pkl")  # matches your file name
-        label_encoder = joblib.load("label_encoder.pkl")
-    except Exception as e:
-        st.error(f"❌ Error loading model files: {e}")
+    model = joblib.load("best_sentiment_model (1).pkl")
+    vectorizer = joblib.load("tfidf_vectorizer (2).pkl")
+    label_encoder = joblib.load("label_encoder (1).pkl")
     return model, vectorizer, label_encoder
 
-model, vectorizer, label_encoder = load_artifacts()
+# -------------------------
+# Negation Handling (improved scope)
+# -------------------------
+NEGATION_WORDS = {
+    "not","no","never","none","nobody","nothing","neither",
+    "isn't","wasn't","aren't","weren't","don't","didn't",
+    "doesn't","can't","couldn't","won't","wouldn't","shouldn't"
+}
 
-# ---------------------------
-# Hybrid Rule-Based + ML
-# ---------------------------
-def rule_based_sentiment(text: str):
-    text_lower = text.lower().strip()
-
-    # Strong positive/negative bare phrases
-    short_pos = ["good movie", "great movie", "nice movie", "well done", "liked it", "amazing movie"]
-    short_neg = ["bad movie", "poor movie", "boring movie", "waste movie", "terrible movie"]
-
-    if any(p == text_lower or p in text_lower for p in short_pos):
-        return "positive"
-    if any(p == text_lower or p in text_lower for p in short_neg):
-        return "negative"
-
-    # Negation patterns
-    negation_phrases = ["not good", "not great", "not a good", "don't like", "didn't like", "don't think", "never liked"]
-    if any(p in text_lower for p in negation_phrases):
-        return "negative"
-
-    # Neutral cues
-    neutral_phrases = ["neither good nor bad", "average movie", "ok movie", "mediocre"]
-    if any(p in text_lower for p in neutral_phrases):
-        return "neutral"
-
-    return None
-
-
-def hybrid_predict(text: str):
-    # 1. Rule-based override
-    rb = rule_based_sentiment(text)
-    if rb:
-        return rb.capitalize()
-
-    # 2. ML model prediction
-    try:
-        transformed = vectorizer.transform([text])
-        pred_encoded = model.predict(transformed)[0]
-        pred_ml = label_encoder.inverse_transform([pred_encoded])[0]
-    except Exception:
-        pred_ml = "neutral"
-
-    # 3. TextBlob fallback for short/ambiguous cases
-    if len(text.split()) <= 3 or len(text) < 15:
-        polarity = TextBlob(text).sentiment.polarity
-        if polarity > 0.2:
-            return "Positive"
-        elif polarity < -0.2:
-            return "Negative"
+def handle_negation(text):
+    tokens = text.split()
+    new_tokens, negate = [], False
+    for word in tokens:
+        lw = word.lower()
+        if lw in NEGATION_WORDS:
+            negate = True
+            new_tokens.append(lw)
+        elif negate:
+            new_tokens.append(word + "_NEG")
+            if any(p in word for p in [".", ",", ";", "!", "?"]):
+                negate = False
         else:
-            return "Neutral"
+            new_tokens.append(word)
+    return " ".join(new_tokens)
 
-    return pred_ml.capitalize()
+# -------------------------
+# Cleaning
+# -------------------------
+def clean_text(s):
+    if s is None: return ""
+    text = html.unescape(str(s))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"http\S+|www\.\S+", " ", text)
+    text = re.sub(r"\S+@\S+", " ", text)
+    text = re.sub(r"[^a-zA-Z0-9\s'.,!?-]", " ", text)
+    text = text.lower()
+    text = re.sub(r"\s+", " ", text).strip()
+    return handle_negation(text)
 
-# ---------------------------
+# -------------------------
+# TextBlob fallback
+# -------------------------
+def textblob_label(text, thresh=0.1):
+    p = TextBlob(text).sentiment.polarity
+    if p > thresh: return "positive"
+    elif p < -thresh: return "negative"
+    else: return "neutral"
+
+# -------------------------
+# Neutral / Mixed Adjustments
+# -------------------------
+NEUTRAL_KEYWORDS = {"average","okay","fine","decent","so-so","not bad","mediocre"}
+POSITIVE_WORDS = {"good","great","fantastic","amazing","loved","best"}
+NEGATIVE_WORDS = {"bad","awful","terrible","horrible","worst","waste"}
+
+def adjust_prediction(review, label, probs, label_encoder):
+    review_lc = review.lower()
+
+    # Neutral keyword override
+    if any(kw in review_lc for kw in NEUTRAL_KEYWORDS):
+        if probs and max(probs.values()) < 0.75:
+            return "neutral"
+
+    # Mixed sentiment override
+    if any(pw in review_lc for pw in POSITIVE_WORDS) and any(nw in review_lc for nw in NEGATIVE_WORDS):
+        return "negative"   # negatives dominate in reviews
+
+    return label
+
+# -------------------------
+# Prediction
+# -------------------------
+def predict_sentiment(text, model, vectorizer, label_encoder):
+    cleaned = clean_text(text)
+    feats = vectorizer.transform([cleaned])
+    pred = model.predict(feats)[0]
+    label = label_encoder.inverse_transform([pred])[0]
+
+    probs = None
+    if hasattr(model, "predict_proba"):
+        probs = model.predict_proba(feats)[0]
+        return label, dict(zip(label_encoder.classes_, probs))
+    return label, None
+
+# -------------------------
+# Hybrid Prediction (Model + Rules + Fallback)
+# -------------------------
+def hybrid_predict(review, model, vectorizer, label_encoder):
+    label, probs = predict_sentiment(review, model, vectorizer, label_encoder)
+    tb_label = textblob_label(review)
+
+    # Apply rule-based adjustments
+    label = adjust_prediction(review, label, probs, label_encoder)
+
+    # Fallback: use TextBlob if confidence weak or strong disagreement
+    if probs:
+        model_conf = max(probs.values())
+        if model_conf < 0.7 or (label != tb_label and model_conf < 0.8):
+            return tb_label, probs, "TextBlob Override"
+    return label, probs, "Model+Rules"
+
+# -------------------------
 # Streamlit UI
-# ---------------------------
-st.markdown('<div class="title-text">🎬 Movie Review Sentiment Analyzer</div>', unsafe_allow_html=True)
+# -------------------------
+def main():
+    st.set_page_config(page_title="🎬 Sentiment Analyzer", layout="centered")
+    st.title("🎬 Movie Review Sentiment Analyzer")
 
-review = st.text_area("✍️ Write your movie review here...", height=150)
+    review = st.text_area("Your review:", height=150)
 
-if st.button("🔍 Analyze Sentiment"):
-    if review.strip():
-        prediction = hybrid_predict(review)
-        st.markdown(f'<div class="result">🧠 *Predicted Sentiment:* {prediction}</div>', unsafe_allow_html=True)
-    else:
-        st.warning("⚠ Please enter a valid review.")
+    if st.button("Analyze Sentiment"):
+        if review.strip() == "":
+            st.warning("⚠️ Please enter a review first.")
+        else:
+            try:
+                model, vectorizer, label_encoder = load_artifacts()
+                label, probs, source = hybrid_predict(review, model, vectorizer, label_encoder)
+
+                st.subheader(f"🧠 Predicted Sentiment: **{label.capitalize()}**")
+                st.caption(f"Decision Source → {source}")
+
+                if probs:
+                    st.write("Confidence:")
+                    st.json({k: f"{v:.2f}" for k,v in probs.items()})
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
+if __name__ == "__main__":
+    main()
