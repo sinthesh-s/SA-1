@@ -66,7 +66,7 @@ def load_artifacts():
 
     try:
         model = joblib.load("artifacts/best_sentiment_model.pkl")
-        vectorizer = joblib.load("artifacts/tfidf_vectorizer.pkl")
+        vectorizer = joblib.load("artifacts/tfidf_vectorizer (1).pkl")
         label_encoder = joblib.load("artifacts/label_encoder.pkl")
     except Exception as e:
         st.error(f"❌ Error loading model files: {e}")
