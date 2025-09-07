@@ -2,68 +2,55 @@ import streamlit as st
 import joblib
 import base64
 import os
-import glob
 
 # --- Page Configuration ---
 st.set_page_config(page_title="🎬 Movie Review Sentiment Analyzer", layout="centered")
 
 # --- Set Background Image ---
-def set_background():
-    bg_files = glob.glob("background_image*")
-    if bg_files:
-        image_path = bg_files[0]
-        try:
-            with open(image_path, "rb") as img_file:
-                encoded = base64.b64encode(img_file.read()).decode()
-            css = f"""
-            <style>
-            .stApp {{
-                background-image: url("data:image/jpg;base64,{encoded}");
-                background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                backdrop-filter: blur(2px);
-            }}
-            .title-text {{
-                background-color: rgba(0,0,0,0.6);
-                color: white;
-                padding: 1rem;
-                border-radius: 10px;
-                text-align: center;
-                font-size: 1.8rem;
-                font-weight: bold;
-            }}
-            .result {{
-                background-color: rgba(255,255,255,0.8);
-                padding: 0.8rem;
-                margin-top: 1rem;
-                border-radius: 8px;
-                font-size: 1.2rem;
-            }}
-            </style>
-            """
-            st.markdown(css, unsafe_allow_html=True)
-        except Exception as e:
-            st.warning(f"⚠ Background not loaded: {e}")
+def set_background(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            encoded = base64.b64encode(img_file.read()).decode()
+        css = f"""
+        <style>
+        .stApp {{
+            background-image: url("data:image/jpg;base64,{encoded}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            backdrop-filter: blur(2px);
+        }}
+        .title-text {{
+            background-color: rgba(0,0,0,0.6);
+            color: white;
+            padding: 1rem;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 1.8rem;
+            font-weight: bold;
+        }}
+        .result {{
+            background-color: rgba(255,255,255,0.8);
+            padding: 0.8rem;
+            margin-top: 1rem;
+            border-radius: 8px;
+            font-size: 1.2rem;
+        }}
+        </style>
+        """
+        st.markdown(css, unsafe_allow_html=True)
 
-set_background()
+set_background("background_image (1).jpg")
 
-# --- Load Model and Components ---
-try:
-    # model file (handles both with/without .pkl)
-    model_file = glob.glob("best_sentiment_model*")[0]
-    model = joblib.load(model_file)
-
-    # vectorizer (handles tfidf_vectorizer (1).pkl, etc.)
-    vectorizer_file = glob.glob("tfidf_vectorizer*.pkl")[0]
-    vectorizer = joblib.load(vectorizer_file)
-
-    # label encoder
+# --- Load Model, Vectorizer, Label Encoder ---
+@st.cache_resource
+def load_artifacts():
+    model = joblib.load("best_sentiment_model.pkl")
+    vectorizer = joblib.load("tfidf_vectorizer (1).pkl")
     label_encoder = joblib.load("label_encoder.pkl")
+    return model, vectorizer, label_encoder
 
-except Exception as e:
-    st.error(f"❌ Error loading model files: {e}")
-    st.stop()
+model, vectorizer, label_encoder = load_artifacts()
 
 # --- Title ---
 st.markdown('<div class="title-text">🎬 Movie Review Sentiment Analyzer</div>', unsafe_allow_html=True)
