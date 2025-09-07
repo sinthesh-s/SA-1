@@ -1,92 +1,115 @@
 import streamlit as st
 import joblib
-import base64
-import zipfile
-import os
+import re
 
-# --- Page Configuration ---
-st.set_page_config(page_title="🎬 Movie Review Sentiment Analyzer", layout="centered")
-
-# --- Set Background Image ---
-def set_background(image_path):
-    with open(image_path, "rb") as img_file:
-        encoded = base64.b64encode(img_file.read()).decode()
-    css = f"""
-    <style>
-    .stApp {{
-        background-image: url("data:image/jpg;base64,{encoded}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        backdrop-filter: blur(2px);
-    }}
-    .title-text {{
-        background-color: rgba(0,0,0,0.6);
-        color: white;
-        padding: 1rem;
-        border-radius: 10px;
-        text-align: center;
-        font-size: 1.8rem;
-        font-weight: bold;
-    }}
-    .result {{
-        background-color: rgba(255,255,255,0.8);
-        padding: 0.8rem;
-        margin-top: 1rem;
-        border-radius: 8px;
-        font-size: 1.2rem;
-    }}
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
-set_background("background_image (1).jpg")
-
-# --- Extract & Load Model ---
+# -------------------------
+# Load artifacts
+# -------------------------
 @st.cache_resource
 def load_artifacts():
-    model_zip_path = "best_sentiment_model.zip"
-    model_dir = "model_dir"
+    try:
+        model = joblib.load("best_sentiment_model.pkl")
+        vectorizer = joblib.load("tfidf_vectorizer.pkl")
+        label_encoder = joblib.load("label_encoder.pkl")
+        return model, vectorizer, label_encoder
+    except Exception as e:
+        st.error(f"❌ Error loading model files: {e}")
+        return None, None, None
 
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
+# -------------------------
+# Rule-based logic
+# -------------------------
+def rule_based_sentiment(text):
+    text_lower = text.lower().strip()
 
-    # Extract only once
-    if not any(fname.endswith(".pkl") for fname in os.listdir(model_dir)):
-        with zipfile.ZipFile(model_zip_path, "r") as zip_ref:
-            zip_ref.extractall(model_dir)
+    # Neutral expressions
+    neutral_phrases = [
+        "neither good nor bad", "not good not bad", "not bad not good",
+        "so so", "meh", "okayish", "average", "fine", "decent",
+        "nothing special", "mediocre", "forgettable"
+    ]
+    if any(p in text_lower for p in neutral_phrases):
+        return "Neutral"
 
-    # Load artifacts
-    model_path = [os.path.join(model_dir, f) for f in os.listdir(model_dir) if f.endswith(".pkl")][0]
-    model = joblib.load(model_path)
-    vectorizer = joblib.load("tfidf_vectorizer (1).pkl")  # adjust to your actual file name
-    label_encoder = joblib.load("label_encoder.pkl")
-    return model, vectorizer, label_encoder
-
-model, vectorizer, label_encoder = load_artifacts()
-
-# --- Negation-aware Prediction ---
-def predict_sentiment(text, model, vectorizer, label_encoder):
-    # Quick negation handling
-    negation_words = ["not", "n't", "never", "no", "don't", "dont", "cannot", "can't"]
-    if any(word in text.lower() for word in negation_words) and "good" in text.lower():
+    # Strong negative
+    strong_neg = [
+        "terrible", "awful", "horrible", "worst", "pathetic",
+        "disgusting", "waste of time", "boring", "dull", "poorly made",
+        "laughable", "painful to watch"
+    ]
+    if any(word in text_lower for word in strong_neg):
         return "Negative"
 
-    # Normal ML prediction
+    # Strong positive
+    strong_pos = [
+        "excellent", "amazing", "fantastic", "outstanding", "masterpiece",
+        "brilliant", "superb", "phenomenal", "spectacular", "top notch",
+        "well made", "loved it", "best ever"
+    ]
+    if any(word in text_lower for word in strong_pos):
+        return "Positive"
+
+    # Negation handling
+    negation_words = ["not", "n't", "never", "no", "dont", "don't", "cannot", "can't", "hardly"]
+    pos_words = ["good", "great", "amazing", "fantastic", "excellent", "wonderful", "awesome"]
+    neg_words = ["bad", "terrible", "awful", "horrible", "poor"]
+
+    if any(word in text_lower.split() for word in negation_words):
+        if any(p in text_lower for p in pos_words):
+            return "Negative"
+        if any(n in text_lower for n in neg_words):
+            return "Positive"
+
+    # Mixed feelings
+    if "good" in text_lower and "bad" in text_lower:
+        return "Neutral"
+    if "love" in text_lower and "hate" in text_lower:
+        return "Neutral"
+    if "better than expected" in text_lower:
+        return "Positive"
+    if "worse than expected" in text_lower:
+        return "Negative"
+
+    # Sarcasm-like cues
+    sarcasm_patterns = [
+        "yeah right", "as if", "sure it was great", "totally amazing", "what a joke"
+    ]
+    if any(p in text_lower for p in sarcasm_patterns):
+        return "Negative"
+
+    return None  # let ML model decide
+
+# -------------------------
+# Hybrid prediction
+# -------------------------
+def predict_sentiment(text, model, vectorizer, label_encoder):
+    # Rule-based first
+    rule_label = rule_based_sentiment(text)
+    if rule_label:
+        return rule_label
+
+    # ML model fallback
     X = vectorizer.transform([text])
     pred = model.predict(X)
     return label_encoder.inverse_transform(pred)[0].capitalize()
 
-# --- Title ---
-st.markdown('<div class="title-text">🎬 Movie Review Sentiment Analyzer</div>', unsafe_allow_html=True)
+# -------------------------
+# Streamlit UI
+# -------------------------
+st.set_page_config(page_title="Sentiment Analysis", page_icon="🎭", layout="centered")
 
-# --- Text Input ---
-review = st.text_area("Write your movie review here...", height=150)
+st.title("🎭 Sentiment Analysis App")
+st.write("Hybrid model: ML + rule-based fixes for tricky cases.")
 
-# --- Predict Button ---
-if st.button("Analyze Sentiment"):
-    if review.strip():
-        prediction = predict_sentiment(review, model, vectorizer, label_encoder)
-        st.markdown(f'<div class="result">🧠 *Predicted Sentiment:* {prediction}</div>', unsafe_allow_html=True)
-    else:
-        st.warning("⚠ Please enter a valid review.")
+model, vectorizer, label_encoder = load_artifacts()
+
+if model and vectorizer and label_encoder:
+    user_input = st.text_area("Enter a review/comment:", "")
+    if st.button("Analyze Sentiment"):
+        if user_input.strip():
+            prediction = predict_sentiment(user_input, model, vectorizer, label_encoder)
+            st.success(f"Predicted Sentiment: **{prediction}**")
+        else:
+            st.warning("⚠️ Please enter some text.")
+else:
+    st.error("Model artifacts not found. Please upload your .pkl files.")
