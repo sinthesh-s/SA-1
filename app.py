@@ -9,7 +9,7 @@ import re
 def load_artifacts():
     try:
         model = joblib.load("best_sentiment_model.pkl")
-        vectorizer = joblib.load("tfidf_vectorizer.pkl")
+        vectorizer = joblib.load("tfidf_vectorizer (1).pkl")
         label_encoder = joblib.load("label_encoder.pkl")
         return model, vectorizer, label_encoder
     except Exception as e:
