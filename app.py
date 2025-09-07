@@ -45,7 +45,7 @@ def set_background(image_path):
         </style>
         """
         st.markdown(css, unsafe_allow_html=True)
-    except Exception as e:
+    except:
         st.warning("⚠ Background image not found.")
 
 set_background("background_image (1).jpg")
@@ -59,15 +59,15 @@ def load_artifacts():
     vectorizer = None
     label_encoder = None
 
-    # If zipped model exists, extract
+    # Extract the model zip if not already done
     if os.path.exists("best_sentiment_model.zip"):
         with zipfile.ZipFile("best_sentiment_model.zip", "r") as zip_ref:
             zip_ref.extractall("artifacts")
 
     try:
         model = joblib.load("artifacts/best_sentiment_model.pkl")
-        vectorizer = joblib.load("artifacts/tfidf_vectorizer (1).pkl")
-        label_encoder = joblib.load("artifacts/label_encoder.pkl")
+        vectorizer = joblib.load("tfidf_vectorizer (1).pkl")  # matches your file name
+        label_encoder = joblib.load("label_encoder.pkl")
     except Exception as e:
         st.error(f"❌ Error loading model files: {e}")
     return model, vectorizer, label_encoder
@@ -78,7 +78,6 @@ model, vectorizer, label_encoder = load_artifacts()
 # Hybrid Rule-Based + ML
 # ---------------------------
 def rule_based_sentiment(text: str):
-    """Extra rules to fix ML blindspots"""
     text_lower = text.lower().strip()
 
     # Strong positive/negative bare phrases
@@ -100,7 +99,7 @@ def rule_based_sentiment(text: str):
     if any(p in text_lower for p in neutral_phrases):
         return "neutral"
 
-    return None  # fallback to ML/TextBlob
+    return None
 
 
 def hybrid_predict(text: str):
@@ -109,15 +108,15 @@ def hybrid_predict(text: str):
     if rb:
         return rb.capitalize()
 
-    # 2. ML model
+    # 2. ML model prediction
     try:
         transformed = vectorizer.transform([text])
         pred_encoded = model.predict(transformed)[0]
         pred_ml = label_encoder.inverse_transform([pred_encoded])[0]
     except Exception:
-        pred_ml = "neutral"  # safe fallback
+        pred_ml = "neutral"
 
-    # 3. TextBlob as sanity check for short texts
+    # 3. TextBlob fallback for short/ambiguous cases
     if len(text.split()) <= 3 or len(text) < 15:
         polarity = TextBlob(text).sentiment.polarity
         if polarity > 0.2:
