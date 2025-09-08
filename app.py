@@ -4,6 +4,7 @@ import re
 import html
 import zipfile
 import os
+import base64
 
 # -------------------------
 # Extract zipped model if needed
@@ -88,6 +89,25 @@ def predict_sentiment(texts, debug=False):
 # Streamlit UI
 # -------------------------
 st.set_page_config(page_title="Sentiment Classifier", page_icon="🤖")
+
+# Load background image
+def add_bg_from_local(image_file):
+    with open(image_file, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode()
+    css = f"""
+    <style>
+    .stApp {{
+        background-image: url("data:image/png;base64,{encoded}");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed;
+    }}
+    </style>
+    """
+    st.markdown(css, unsafe_allow_html=True)
+
+add_bg_from_local("background_image (1).jpg")
+
 st.title("🎭 Sentiment Analysis App")
 st.write("Enter a review/comment below and get the predicted sentiment.")
 
