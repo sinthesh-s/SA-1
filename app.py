@@ -2,19 +2,7 @@ import streamlit as st
 import joblib
 import re
 import html
-import zipfile
-import os
-import base64
-
-# -------------------------
-# Extract zipped model if needed
-# -------------------------
-MODEL_ZIP = "model.zip"
-MODEL_FILE = "model.pkl"
-
-if not os.path.exists(MODEL_FILE) and os.path.exists(MODEL_ZIP):
-    with zipfile.ZipFile(MODEL_ZIP, "r") as zip_ref:
-        zip_ref.extractall(".")  # extracts model.pkl
+import numpy as np
 
 # -------------------------
 # Load model + vectorizer + encoder
@@ -63,7 +51,7 @@ def clean_text(s):
 # -------------------------
 # Prediction function
 # -------------------------
-def predict_sentiment(texts, debug=False):
+def predict_sentiment(texts):
     if isinstance(texts, str):
         texts = [texts]
 
@@ -71,65 +59,26 @@ def predict_sentiment(texts, debug=False):
     feats = vectorizer.transform(cleaned)
     preds = model.predict(feats)
     labels = encoder.inverse_transform(preds)
-
-    if debug:
-        debug_info = []
-        for raw, clean, pred, label in zip(texts, cleaned, preds, labels):
-            debug_info.append({
-                "raw_input": raw,
-                "cleaned_text": clean,
-                "predicted_label": label,
-                "numeric_class": int(pred)
-            })
-        return labels, debug_info
-
     return labels
 
 # -------------------------
 # Streamlit UI
 # -------------------------
 st.set_page_config(page_title="Sentiment Classifier", page_icon="🤖")
-
-# Load background image
-def add_bg_from_local(image_file):
-    with open(image_file, "rb") as f:
-        encoded = base64.b64encode(f.read()).decode()
-    css = f"""
-    <style>
-    .stApp {{
-        background-image: url("data:image/png;base64,{encoded}");
-        background-size: cover;
-        background-position: center;
-        background-attachment: fixed;
-    }}
-    </style>
-    """
-    st.markdown(css, unsafe_allow_html=True)
-
-add_bg_from_local("background_image (1).jpg")
-
 st.title("🎭 Sentiment Analysis App")
 st.write("Enter a review/comment below and get the predicted sentiment.")
 
-# Debug toggle
-debug_mode = st.sidebar.checkbox("🔎 Enable Debug Mode", value=False)
-
-# Single input
+# Input box
 user_input = st.text_area("Enter your review here:", "")
 
 if st.button("Predict Sentiment"):
     if user_input.strip() == "":
         st.warning("⚠️ Please enter a review.")
     else:
-        if debug_mode:
-            label, dbg = predict_sentiment(user_input, debug=True)
-            st.success(f"**Predicted Sentiment:** {label[0]}")
-            st.write("🔎 Debug Info:", dbg[0])
-        else:
-            label = predict_sentiment(user_input)[0]
-            st.success(f"**Predicted Sentiment:** {label}")
+        label = predict_sentiment(user_input)[0]
+        st.success(f"**Predicted Sentiment:** {label}")
 
-# Batch input
+# Batch test section
 st.subheader("🔍 Try Multiple Reviews")
 batch_text = st.text_area("Enter multiple reviews (one per line):", "")
 
@@ -138,13 +87,7 @@ if st.button("Predict Batch"):
         st.warning("⚠️ Please enter at least one review.")
     else:
         reviews = batch_text.strip().split("\n")
-        if debug_mode:
-            labels, dbg = predict_sentiment(reviews, debug=True)
-            for d in dbg:
-                st.write(f"- **{d['raw_input']}** → `{d['predicted_label']}`")
-                st.caption(f"Cleaned: {d['cleaned_text']} | ClassID: {d['numeric_class']}")
-        else:
-            results = predict_sentiment(reviews)
-            st.write("### Results:")
-            for r, l in zip(reviews, results):
-                st.write(f"- **{r.strip()}** → `{l}`")
+        results = predict_sentiment(reviews)
+        st.write("### Results:")
+        for r, l in zip(reviews, results):
+            st.write(f"- **{r.strip()}** → `{l}`")
